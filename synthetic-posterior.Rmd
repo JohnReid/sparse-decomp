@@ -1,0 +1,75 @@
+```{r echo=FALSE, eval=FALSE}
+library(rmarkdown)
+render('synthetic-posterior.Rmd')
+
+```
+
+```{r message=FALSE}
+library(knitr)
+library(dplyr)
+library(reshape2)
+library(ggplot2)
+library(stringr)
+
+```
+
+```{r config, echo=FALSE}
+opts_chunk$set(fig.width=12, fig.height=8)
+
+```
+
+Load the fit.
+```{r}
+load('synthetic-fit.RData')
+
+```
+
+
+## $\hat{R}$ convergence statistics
+
+```{r}
+posterior.stats <- as.data.frame(posterior.summary)
+posterior.stats$param <- rownames(posterior.stats)
+posterior.stats$variable <- factor(str_match(rownames(posterior.summary),
+                                             "[[:alpha:]]+"))
+(ggplot(posterior.stats, aes(x=variable, y=Rhat)) + geom_boxplot())
+
+```
+
+## $X$ posterior
+
+```{r}
+betas.l <- betas %>% melt(varnames=c("g", "r"), value.name="beta")
+(ggplot(samples$X %>% left_join(times),
+        aes(x=time, y=X, group=iter))
+    + geom_line(alpha=.1)
+    + facet_wrap(~ g)
+)
+(ggplot(samples$X %>% left_join(times),
+        aes(x=factor(time), y=X))
+    + geom_boxplot()
+    + facet_wrap(~ g)
+)
+
+```
+
+
+## $\beta$ posterior
+
+```{r}
+betas.l <- betas %>% melt(varnames=c("g", "r"), value.name="beta")
+(ggplot(samples$beta,
+        aes(x=factor(g), y=beta))
+    + geom_boxplot()
+    + geom_point(data=betas.l, colour="red", size=7, alpha=.5)
+    + facet_wrap(~ r)
+)
+
+```
+
+
+R version and session information.
+```{r}
+sessionInfo()
+
+```
