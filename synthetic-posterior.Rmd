@@ -44,6 +44,8 @@ betas.l <- betas %>% melt(varnames=c("g", "r"), value.name="beta")
 (ggplot(samples$X %>% left_join(times),
         aes(x=time, y=X, group=iter))
     + geom_line(alpha=.1)
+    + geom_point(data=X.l %>% left_join(times),
+                 colour="red", size=7, alpha=.5)
     + facet_wrap(~ g)
 )
 
