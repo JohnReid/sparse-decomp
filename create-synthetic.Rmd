@@ -139,12 +139,12 @@ X.Sigma <- (
     Sigma.x
     %>% melt(varnames = c("g", "t", "t2"), value.name = "V")
     %>% filter(t == t2))
-X.l <- X %>% melt(varnames = c("g", "t"), value.name = "x")
+X.l <- X %>% melt(varnames = c("g", "t"), value.name = "X")
 (ggplot(X.mu %>% left_join(X.Sigma) %>% left_join(times), aes(x=time, y=mu))
     + geom_line()
     + geom_ribbon(aes(ymin=mu-2*sqrt(V), ymax=mu+2*sqrt(V)), alpha=.5)
     + geom_point(data=X.l %>% left_join(times),
-                 aes(x=time, y=x),
+                 aes(x=time, y=X),
                  size=3,
                  alpha=.4)
     + facet_wrap(~ g))
@@ -195,7 +195,7 @@ conditioned.y <- gather(Y.posteriors, "conditioned")
 
 Plot the observed posteriors for Y with the 'true' Y.
 ```{r}
-Y.l <- Y %>% melt(varnames = c("r", "t"), value.name = "y")
+Y.l <- Y %>% melt(varnames = c("r", "t"), value.name = "Y")
 Y.conditioned.l <- conditioned.y %>% melt(varnames = c("r", "t"),
                                           value.name = "conditioned")
 Y.mu <- mu.y %>% melt(varnames = c("r", "t"), value.name = "mu")
@@ -207,7 +207,7 @@ Y.Sigma <- (
     + geom_line()
     + geom_ribbon(aes(ymin=mu-2*sqrt(V), ymax=mu+2*sqrt(V)), alpha=.5)
     + geom_point(data=Y.l %>% left_join(times) %>% left_join(Y.conditioned.l),
-                 aes(x=time, y=y, color=conditioned),
+                 aes(x=time, y=Y, color=conditioned),
                  size=3,
                  alpha=.8)
     + facet_wrap(~ r))

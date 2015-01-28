@@ -36,6 +36,7 @@ posterior.stats$variable <- factor(str_match(rownames(posterior.summary),
 
 ```
 
+
 ## $X$ posterior
 
 ```{r}
@@ -45,9 +46,12 @@ betas.l <- betas %>% melt(varnames=c("g", "r"), value.name="beta")
     + geom_line(alpha=.1)
     + facet_wrap(~ g)
 )
+
 (ggplot(samples$X %>% left_join(times),
         aes(x=factor(time), y=X))
     + geom_boxplot()
+    + geom_point(data=X.l %>% left_join(times),
+                 colour="red", size=7, alpha=.5)
     + facet_wrap(~ g)
 )
 
