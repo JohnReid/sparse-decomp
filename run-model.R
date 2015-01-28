@@ -29,7 +29,7 @@ chains <- getOption("stan.chains", num.cores)
 iter <- getOption("stan.iter", 1000)
 thin <- getOption("stan.thin", 10)
 model.file <- 'sparse-decomp.stan'
-compiled.model.file <- 'spares-decomp-model.rds'
+compiled.model.file <- 'sparse-decomp-model.rds'
 if (file.exists(compiled.model.file)) {
     message("**** Loading pre-compiled model from ", compiled.model.file)
     compiled <- readRDS(compiled.model.file)
