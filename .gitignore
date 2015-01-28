@@ -3,6 +3,7 @@ create-synthetic.RData
 create-synthetic.html
 run-model-cfg.R
 spares-decomp-model.rds
+sparse-decomp-model.rds
 sparse-decomp.html
 synthetic-fit.RData
 synthetic.RData
