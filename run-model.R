@@ -52,7 +52,7 @@ sflist <- mclapply(1:num.cores,
                             chain_id=i,
                             refresh=-1))
 fit <- sflist2stanfit(sflist)
-rm(sflist)
+rm(sflist, compiled)
 
 # Summarise posterior
 posterior.summary <- monitor(fit, print=FALSE)
@@ -78,5 +78,5 @@ samples <- melt.samples(extract(fit, permuted=TRUE), sample.dims)
 best.sample <- (samples$lp__ %>% arrange(-lp__) %>% head(1))$iter
 
 # Save results
-message('**** Saving output file to: ', output.file)
-save.image(output.file)
+message('**** Saving output to: ', output.file)
+save(posterior.summary, sample.dims, samples, file=output.file)
