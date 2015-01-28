@@ -18,8 +18,9 @@ opts_chunk$set(fig.width=12, fig.height=8)
 
 ```
 
-Load the fit.
-```{r}
+Load the data and the fit.
+```{r loadFit}
+load('create-synthetic.RData')
 load('synthetic-fit.RData')
 
 ```
@@ -27,7 +28,7 @@ load('synthetic-fit.RData')
 
 ## $\hat{R}$ convergence statistics
 
-```{r}
+```{r Rhat}
 posterior.stats <- as.data.frame(posterior.summary)
 posterior.stats$param <- rownames(posterior.stats)
 posterior.stats$variable <- factor(str_match(rownames(posterior.summary),
@@ -39,21 +40,13 @@ posterior.stats$variable <- factor(str_match(rownames(posterior.summary),
 
 ## $X$ posterior
 
-```{r}
-betas.l <- betas %>% melt(varnames=c("g", "r"), value.name="beta")
-(ggplot(samples$X %>% left_join(times),
-        aes(x=time, y=X, group=iter))
-    + geom_line(alpha=.1)
-    + geom_point(data=X.l %>% left_join(times),
+```{r posteriorX}
+times.factor <- times %>% mutate(time=factor(time))
+(ggplot(samples$X %>% left_join(times.factor), aes(x=time, y=X))
+    + geom_point(data=X.l %>% left_join(times.factor),
+                 aes(x=time, y=X),
                  colour="red", size=7, alpha=.5)
-    + facet_wrap(~ g)
-)
-
-(ggplot(samples$X %>% left_join(times),
-        aes(x=factor(time), y=X))
     + geom_boxplot()
-    + geom_point(data=X.l %>% left_join(times),
-                 colour="red", size=7, alpha=.5)
     + facet_wrap(~ g)
 )
 
@@ -62,10 +55,9 @@ betas.l <- betas %>% melt(varnames=c("g", "r"), value.name="beta")
 
 ## $\beta$ posterior
 
-```{r}
+```{r posteriorBeta}
 betas.l <- betas %>% melt(varnames=c("g", "r"), value.name="beta")
-(ggplot(samples$beta,
-        aes(x=factor(g), y=beta))
+(ggplot(samples$beta, aes(x=factor(g), y=beta))
     + geom_boxplot()
     + geom_point(data=betas.l, colour="red", size=7, alpha=.5)
     + facet_wrap(~ r)
@@ -75,7 +67,7 @@ betas.l <- betas %>% melt(varnames=c("g", "r"), value.name="beta")
 
 
 R version and session information.
-```{r}
+```{r sessionInfo}
 sessionInfo()
 
 ```
