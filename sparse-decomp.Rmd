@@ -1,0 +1,304 @@
+```{r echo=FALSE, eval=FALSE}
+library(rmarkdown)
+render('sparse-decomp.Rmd')
+
+```
+
+```{r message=FALSE}
+library(knitr)
+library(MASS)
+library(rstan)
+library(dplyr)
+library(reshape2)
+library(ggplot2)
+
+```
+
+```{r config, echo=FALSE}
+opts_chunk$set(fig.width=12, fig.height=8)
+
+```
+
+## Julia's data
+
+Load Julia's data.
+```{r loadJuliaData}
+gene.meta <- readRDS("/home/john/Analysis/Julia-Tischler/scripts/genes-666-genes-56-cells.rds")
+cell.meta <- readRDS("/home/john/Analysis/Julia-Tischler/scripts/cells-666-genes-56-cells.rds")
+predictions <- readRDS("/home/john/Analysis/Julia-Tischler/scripts/predictions-666-genes-56-cells.rds")
+Sigma.x <- aperm(readRDS("/home/john/Analysis/Julia-Tischler/scripts/covs-666-genes-56-cells.rds"))
+mu.x <- predictions %>% acast(g ~ t, value.var="predictedmean")
+.T <- ncol(mu.x)
+.G <- nrow(mu.x)
+
+```
+
+Prepare some of Julia's data for the model.
+```{r prepareJuliaData}
+genes <- 1:27
+times <- 1:(.T-1)
+targets <- 1:2
+stan.data <- list(
+    T = length(times),
+    G = length(genes),
+    R = length(targets),
+    lambda = 1,
+    mu_x = mu.x[genes, times],
+    Sigma_x = Sigma.x[genes, times, times],
+    mu_y = mu.x[targets, times+1] - mu.x[targets, times],
+    Sigma_y = Sigma.x[targets, times, times]
+            + Sigma.x[targets, times+1, times+1]
+)
+
+```
+
+
+## Synthetic data
+
+Parameters for data generation.
+```{r}
+.G <- 10  # Number of predictors (features)
+.R <- 6   # Number of targets (outputs)
+tmin <- 0  # Start of domain
+tmax <- 10  # End of domain
+num.time.points <- 21  # How many time points to regress over
+num.obs <- 7  # How many data to condition on?
+sigma.noise <- .1  # How much noise
+mean.num.betas <- 4  # How many non-zero betas on average
+sigma.beta <- 1  # S.d. of non-zero betas
+num.Y.to.condition.on <- 7  # How many true Y to condition on to estimate mean and variance
+set.seed(1)
+
+```
+
+Sample data to condition on to create some interesting $X$.
+```{r}
+# Evenly spaced points
+linspace <- function(xmin, xmax, num.samples) {
+    (0:(num.samples-1)) * (xmax-xmin) / (num.samples-1) + xmin
+}
+# Set up the observed time points
+sample.times <- data.frame(time=linspace(tmin, tmax, num.obs))
+sample.times$tau <- 1:nrow(sample.times)
+# Create a squared exponential covariance function (RBF)
+create.SE.cov.fn <- function(l=1) {
+    function(t1, t2) {
+        d <- outer(t1, t2, "-")
+        exp(-(d/l)**2/2)
+    }
+}
+# Multiply a covariance function by a constant
+multiply.cov.fn <- function(k, sigma2) {
+    function(t1, t2) sigma2 * k(t1, t2)
+}
+# Add diagonal noise term to a covariance matrix
+add.noise <- function(K, sigma) {
+    K + diag(sigma**2, nrow(K), ncol(K))
+}
+# Calculate the covariance
+SE.cov.fn <- create.SE.cov.fn(l=3)
+K.SE <- SE.cov.fn(sample.times$time, sample.times$time)
+# Sample the data
+obs <- mvrnorm(n=.G, mu=rep(0, nrow(sample.times)), Sigma=K.SE)
+
+```
+
+Plot the samples.
+```{r}
+# Melt into format for plotting
+obs.l <- melt(obs, varnames=c("g", "tau"), value.name="y")
+# Plot
+(ggplot(obs.l %>% left_join(sample.times),
+        aes(x=time, y=y))
+    + geom_line()
+    + facet_wrap(~ g))
+
+```
+
+Condition on the samples to get posterior for $X$.
+```{r}
+times <- data.frame(time=linspace(tmin, tmax, num.time.points))
+times$t <- 1:nrow(times)
+# Calculate the posterior mean, variance (full) and log marginal likelihood
+calc.posterior <- function(X, y, k, sigma.noise, xstar) {
+    within(list(), {
+        X <- X
+        y <- y
+        sigma.noise <- sigma.noise
+        xstar <- xstar
+        K <- k(X, X)
+        Kstar <- k(xstar, X)
+        Kstarstar <- k(xstar, xstar)
+        L <- chol(add.noise(K, sigma.noise))
+        alpha <- solve(L, solve(t(L), y))
+        mu <- as.vector(Kstar %*% alpha)
+        log.marg.like <- (
+            - t(y) %*% alpha / 2
+            - sum(diag(L))
+            - length(y)/2*log(2*pi))
+        V <- Kstarstar - Kstar %*% solve(L, solve(t(L), t(Kstar)))
+    })
+}
+# Calculate the posteriors for each predictor
+X.posteriors <- lapply(
+    1:.G,
+    function(r) calc.posterior(sample.times$time,
+                               obs[r,],
+                               SE.cov.fn,
+                               sigma.noise,
+                               times$time))
+# Gather elements of the posterior list into a matrix/array
+gather <- function(posteriors, name) {
+    aperm(vapply(posteriors,
+                 function(posterior) posterior[[name]],
+                 FUN.VALUE=posteriors[[1]][[name]]))
+}
+# Gather the posterior means for the X
+mu.x <- gather(X.posteriors, "mu")
+Sigma.x <- gather(X.posteriors, "V")
+
+```
+
+Sample $X$, the 'true' values for each predictor.
+```{r}
+X <- t(sapply(
+    X.posteriors,
+    function(posterior) mvrnorm(mu=posterior$mu, Sigma=posterior$V)))
+
+```
+
+Plot the observed posteriors for $X$ and the 'true' values.
+```{r}
+X.mu <- mu.x %>% melt(varnames = c("g", "t"), value.name = "mu")
+X.Sigma <- (
+    Sigma.x
+    %>% melt(varnames = c("g", "t", "t2"), value.name = "V")
+    %>% filter(t == t2))
+X.l <- X %>% melt(varnames = c("g", "t"), value.name = "x")
+(ggplot(X.mu %>% left_join(X.Sigma) %>% left_join(times), aes(x=time, y=mu))
+    + geom_line()
+    + geom_ribbon(aes(ymin=mu-2*sqrt(V), ymax=mu+2*sqrt(V)), alpha=.5)
+    + geom_point(data=X.l %>% left_join(times),
+                 aes(x=time, y=x),
+                 size=3,
+                 alpha=.4)
+    + facet_wrap(~ g))
+
+```
+
+Sample $\beta$ for each predictor.
+```{r}
+sample.betas <- function(.G, mean.num, sigma.beta=1) {
+    stopifnot(mean.num >= 1)
+    how.many <- min(1 + rpois(1, mean.num - 1), .G)
+    idxs <- sample(1:.G, how.many)
+    betas <- rep(0, .G)
+    betas[idxs] <- rnorm(n=how.many, mean=0, sd=sigma.beta)
+    betas
+}
+betas <- sapply(1:.R, function(r) sample.betas(.G, mean.num.betas, sigma.beta))
+
+```
+
+Calculate $Y = \beta' X$, the 'true' targets.
+```{r}
+Y <- t(betas) %*% X
+
+```
+
+Select a few time points for each $y$ and condition on them to get
+an observed posterior for $Y$.
+```{r}
+condition.Y <- function(r) {
+    condition.idxs <- sample(times$t, num.Y.to.condition.on)
+    posterior <- calc.posterior(times$time[condition.idxs],
+                                Y[r, condition.idxs],
+                                multiply.cov.fn(SE.cov.fn, mean.num.betas**2),
+                                sigma.noise*mean.num.betas,
+                                times$time)
+    posterior$conditioned <- rep(FALSE, ncol(Y))
+    posterior$conditioned[condition.idxs] <- TRUE
+    posterior
+}
+Y.posteriors <- lapply(1:.R, condition.Y)
+# Gather the posterior means for the Y
+mu.y <- gather(Y.posteriors, "mu")
+Sigma.y <- gather(Y.posteriors, "V")
+conditioned.y <- gather(Y.posteriors, "conditioned")
+
+```
+
+Plot the observed posteriors for Y with the 'true' Y.
+```{r}
+Y.l <- Y %>% melt(varnames = c("r", "t"), value.name = "y")
+Y.conditioned.l <- conditioned.y %>% melt(varnames = c("r", "t"),
+                                          value.name = "conditioned")
+Y.mu <- mu.y %>% melt(varnames = c("r", "t"), value.name = "mu")
+Y.Sigma <- (
+    Sigma.y
+    %>% melt(varnames = c("r", "t", "t2"), value.name = "V")
+    %>% filter(t == t2))
+(ggplot(Y.mu %>% left_join(Y.Sigma) %>% left_join(times), aes(x=time, y=mu))
+    + geom_line()
+    + geom_ribbon(aes(ymin=mu-2*sqrt(V), ymax=mu+2*sqrt(V)), alpha=.5)
+    + geom_point(data=Y.l %>% left_join(times) %>% left_join(Y.conditioned.l),
+                 aes(x=time, y=y, color=conditioned),
+                 size=3,
+                 alpha=.8)
+    + facet_wrap(~ r))
+
+```
+
+```{r compile, eval=FALSE}
+fit <- stan('sparse-decomp.stan',
+            model_name='sparse-decomp')
+
+```
+
+```{r fit, eval=FALSE}
+fit <- stan(fit = fit,
+            data = stan.data,
+            chains = 2,
+            iter = 1000)
+
+```
+
+```{r posterior, eval=FALSE}
+plot(fit)
+
+melt.samples <- function(sample.list, sample.dims) {
+    melt.var <- function(var.name) {
+        melt(sample.list[[var.name]],
+            c("iter", sample.dims[[var.name]]),
+            value.name=var.name)
+    }
+    sapply(names(sample.dims), melt.var)
+}
+sample.dims <- list(
+    lp__ = c(),
+    # Y = c("r", "t"),
+    X = c("g", "t"),
+    beta = c("g", "r"),
+    s = c("g", "r"))
+samples <- melt.samples(extract(fit, permuted=TRUE), sample.dims)
+
+best.sample <- (samples$lp__ %>% arrange(-lp__) %>% head(1))$iter
+
+qplot(samples$lp__$lp__)
+qplot(samples$s$s)
+qplot(samples$beta$beta)
+
+beta.samples <- samples$beta %>% acast(iter ~ g ~ r, value.var = "beta")
+dim(beta.samples)
+X.samples <- samples$X %>% acast(iter ~ g ~ t, value.var = "X")
+dim(X.samples)
+
+t(beta.samples[best.sample,,]) %*% X.samples[best.sample,,]
+
+```
+
+R version and session information.
+```{r}
+sessionInfo()
+
+```
