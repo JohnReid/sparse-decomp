@@ -79,4 +79,8 @@ best.sample <- (samples$lp__ %>% arrange(-lp__) %>% head(1))$iter
 
 # Save results
 message('**** Saving output to: ', output.file)
-save(posterior.summary, sample.dims, samples, file=output.file)
+save(posterior.summary,
+     sample.dims,
+     samples,
+     best.sample,
+     file=output.file)
