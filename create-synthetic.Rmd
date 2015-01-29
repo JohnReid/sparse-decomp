@@ -27,23 +27,27 @@ Parameters for data generation.
 .T <- 21  # How many time points to regress over
 tmin <- 0  # Start of domain
 tmax <- 10  # End of domain
-num.obs <- 7  # How many data to condition on?
+num.Z <- 7  # How many data to condition on?
 sigma.noise <- .1  # How much noise
 mean.num.betas <- 4  # How many non-zero betas on average
 sigma.beta <- 1  # S.d. of non-zero betas
-num.Y.to.condition.on <- 7  # How many true Y to condition on to estimate mean and variance
+num.Y.to.condition.on <- 5  # How many true Y to condition on to estimate mean and variance
 set.seed(1)
 
 ```
 
-Sample data to condition on to create some interesting $X$.
+We sample data $Z_g$ for each predictor from a Gaussian process prior. Once
+sampled, we condition on the data to get a posterior for $X_g$. We discard the
+original sampled data and sample the 'true' $X_g$ from the posterior derived
+from the data.
+
 ```{r}
 # Evenly spaced points
 linspace <- function(xmin, xmax, num.samples) {
     (0:(num.samples-1)) * (xmax-xmin) / (num.samples-1) + xmin
 }
 # Set up the observed time points
-sample.times <- data.frame(time=linspace(tmin, tmax, num.obs))
+sample.times <- data.frame(time=linspace(tmin, tmax, num.Z))
 sample.times$tau <- 1:nrow(sample.times)
 # Create a squared exponential covariance function (RBF)
 create.SE.cov.fn <- function(l=1) {
@@ -64,23 +68,23 @@ add.noise <- function(K, sigma) {
 SE.cov.fn <- create.SE.cov.fn(l=3)
 K.SE <- SE.cov.fn(sample.times$time, sample.times$time)
 # Sample the data
-obs <- mvrnorm(n=.G, mu=rep(0, nrow(sample.times)), Sigma=K.SE)
+Z <- mvrnorm(n=.G, mu=rep(0, nrow(sample.times)), Sigma=K.SE)
 
 ```
 
-Plot the samples.
+Plot the samples, $Z$.
 ```{r}
 # Melt into format for plotting
-obs.l <- melt(obs, varnames=c("g", "tau"), value.name="y")
+Z.l <- melt(Z, varnames=c("g", "tau"), value.name="y")
 # Plot
-(ggplot(obs.l %>% left_join(sample.times),
+(ggplot(Z.l %>% left_join(sample.times),
         aes(x=time, y=y))
     + geom_line()
     + facet_wrap(~ g))
 
 ```
 
-Condition on the samples to get posterior for $X$.
+Condition on the samples, $Z$, to get posterior for $X$.
 ```{r}
 times <- data.frame(time=linspace(tmin, tmax, .T))
 times$t <- 1:nrow(times)
@@ -108,7 +112,7 @@ calc.posterior <- function(X, y, k, sigma.noise, xstar) {
 X.posteriors <- lapply(
     1:.G,
     function(r) calc.posterior(sample.times$time,
-                               obs[r,],
+                               Z[r,],
                                SE.cov.fn,
                                sigma.noise,
                                times$time))
@@ -124,7 +128,7 @@ Sigma.x <- gather(X.posteriors, "V")
 
 ```
 
-Sample $X$, the 'true' values for each predictor.
+Sample $X$, the 'true' values for each predictor from the posterior.
 ```{r}
 X <- t(sapply(
     X.posteriors,
@@ -132,7 +136,7 @@ X <- t(sapply(
 
 ```
 
-Plot the observed posteriors for $X$ and the 'true' values.
+Plot the observed posteriors for $X$ and the 'true' values, $X$.
 ```{r}
 X.mu <- mu.x %>% melt(varnames = c("g", "t"), value.name = "mu")
 X.Sigma <- (
@@ -171,8 +175,9 @@ Y <- t(betas) %*% X
 
 ```
 
-Select a few time points for each $y$ and condition on them to get
-an observed posterior for $Y$.
+Now we know the true $Y$ at all the time points, sample
+`r num.Y.to.condition.on` time points for each target and condition
+on their values to derive an observed posterior for $Y$.
 ```{r}
 condition.Y <- function(r) {
     condition.idxs <- sample(times$t, num.Y.to.condition.on)
